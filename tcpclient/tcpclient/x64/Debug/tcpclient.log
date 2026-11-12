@@ -1,0 +1,7 @@
+﻿  log.cpp
+\log.cpp(1,1): error C1083: Cannot open source file: 'log.cpp': No such file or directory
+  (compiling source file '/log.cpp')
+  
+  main.cpp
+C:\Users\TBMVD\Desktop\Onderzoektest\tcpclient\main.cpp(4,10): error C1083: Cannot open include file: 'log.hpp': No such file or directory
+  Generating Code...
