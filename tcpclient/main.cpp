@@ -10,11 +10,16 @@
 #include <array>
 #include <algorithm>
 #include <limits>
+#include <fstream>
+#include "RequestLog.hpp"
+
+
 
 
 #define PORT 8080
 #define BUF_SIZE 1024
-#define IP_ADDRESS "127.0.0.1"  //localhost loopback address
+//#define IP_ADDRESS "127.0.0.1"  //localhost loopback address
+#define IP_ADDRESS "145.49.38.204" 
 DWORD timeout = 5000; // 5 seconds
 
 // Safe way to print to console from multiple active threads
@@ -55,6 +60,62 @@ bool isPingReturned = false;
 }*/
 
 uint32_t nextMessageId = 1;
+
+std::string EscapeCSV(const std::string& value)
+{
+	std::string escaped = "\"";
+
+	for (const char character : value)
+	{
+		if (character == '"')
+		{
+			escaped += "\"\"";
+		}
+		else
+		{
+			escaped += character;
+		}
+	}
+
+	escaped += "\"";
+	return escaped;
+}
+
+void printToCsv(const std::vector<RequestLog>& requests)
+{
+	const std::string filename = "packet_statistics.csv";
+
+	std::ifstream existingFile(filename, std::ios::ate);
+	bool writeHeader = !existingFile || existingFile.tellg() == 0;
+	existingFile.close();
+
+	std::ofstream csvFile(filename, std::ios::app);
+
+	if (!csvFile.is_open()) {
+		std::cerr << "Failed to open CSV file.\n";
+		return;
+	}
+
+	if (writeHeader) {
+		csvFile << "ID,Message,Ping,IsPacketLost\n";
+	}
+
+	for (const RequestLog& request : requests)
+	{
+		csvFile << request.requestID << ",";
+
+		csvFile << EscapeCSV(request.message) << ",";
+
+		if (request.ping.has_value())
+		{
+			csvFile << std::fixed << std::setprecision(2)
+				<< request.ping.value();
+		}
+
+		csvFile << "," << (request.isPacketLost ? "true" : "false") << "\n";
+	}
+}
+
 
 std::string sendMessage(std::string message)
 {
@@ -126,6 +187,8 @@ void pingServer()
 
 void checkPacketLoss(int numPackets)
 {
+	static int nextRequestID = 1;
+
 	if (numPackets <= 0) {
 		numPackets = 1;
 	}
@@ -136,6 +199,9 @@ void checkPacketLoss(int numPackets)
 	int lostPackets = 0;
 	double totalPing = 0.0;
 
+	std::vector<RequestLog> requests;
+	requests.reserve(numPackets);
+
 	for (int i = 0; i < numPackets; ++i) {
 		auto start = Clock::now();
 
@@ -143,18 +209,33 @@ void checkPacketLoss(int numPackets)
 
 		auto end = Clock::now();
 
+		RequestLog request;
+		request.requestID = nextRequestID++;
+		request.message = response;
+
 		if (response == "error") {
 			++lostPackets;
+
+			request.ping = std::nullopt;
+			request.isPacketLost = true;
 		}
 		else {
 			auto rtt = std::chrono::duration<double, std::milli>(end - start);
-			totalPing += rtt.count();
+			double ping = rtt.count();
+
+			totalPing += ping;
+
+			request.ping = ping;
+			request.isPacketLost = false;
 		}
+
+		requests.push_back(request);
 	}
 
 	int successfulPackets = numPackets - lostPackets;
 
-	double packetLossRate = static_cast<double>(lostPackets) / numPackets * 100.0;
+	double packetLossRate =
+		static_cast<double>(lostPackets) / numPackets * 100.0;
 
 	std::cout << "\n--- Ping statistics ---\n";
 	std::cout << "Packets sent: " << numPackets << '\n';
@@ -168,6 +249,9 @@ void checkPacketLoss(int numPackets)
 	else {
 		std::cout << "Average ping: N/A\n";
 	}
+
+	// Log all individual requests to CSV.
+	printToCsv(requests);
 }
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
@@ -242,7 +326,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
 			pingServer();
 		}
 		else if (message == "/test") {
-			checkPacketLoss(10);
+			checkPacketLoss(100);
 		}
 		else if (message == "exit") {
 			break;

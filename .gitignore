@@ -38,3 +38,9 @@
 *.user
 *.userosscache
 *.sln.docstates
+
+# Ignore all nested build output folders
+**/Debug/
+**/Release/
+**/x64/
+**/x86/
